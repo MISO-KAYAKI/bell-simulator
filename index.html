@@ -94,7 +94,8 @@
 
             oscillator = audioContext.createOscillator();
             // 波形は三角波を使用
-            oscillator.type = 'triangle'; 
+            // oscillator.type = 'triangle'; 
+            oscillator.type = 'sine'; 
             oscillator.frequency.setValueAtTime(baseFrequency, audioContext.currentTime);
             oscillator.connect(gainNode);
 
@@ -139,7 +140,8 @@
                 }
 
                 // ★ 音量固定: 揺れの大きさに関わらず最大音量(1.0)で鳴らす
-                const fixedGain = 1.0; 
+                // const fixedGain = 1.0; 
+                const fixedGain = 2.0;                 
                 
                 // --- 音を鳴らす処理 ---
                 isSounding = true;
