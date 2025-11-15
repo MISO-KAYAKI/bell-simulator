@@ -67,12 +67,13 @@
         const audioContext = new AudioContext();
         
         let oscillator = null;
-        let oscillator2 = null;
+        let oscillator2 = null; // ★ 2つ目のオシレーターを追加
         let gainNode = null;
         const baseFrequency = 1000; 
         
         let isSounding = false;
         const RELEASE_TIME = 0.4; 
+        // ★ 2つのオシレーターのピッチのズレ (セント単位)
         const DETUNE_CENTS = 5; 
 
         // HTML要素の参照
@@ -98,16 +99,16 @@
             oscillator.frequency.setValueAtTime(baseFrequency, audioContext.currentTime);
             oscillator.connect(gainNode);
             
-            // 2つ目のオシレーター (デチューン音)
+            // ★ 2つ目のオシレーター (デチューン音)
             oscillator2 = audioContext.createOscillator();
             oscillator2.type = 'triangle'; 
             oscillator2.frequency.setValueAtTime(baseFrequency, audioContext.currentTime);
-            oscillator2.detune.setValueAtTime(DETUNE_CENTS, audioContext.currentTime);
+            oscillator2.detune.setValueAtTime(DETUNE_CENTS, audioContext.currentTime); // わずかにピッチをずらす
             oscillator2.connect(gainNode);
 
             try {
                 oscillator.start();
-                oscillator2.start();
+                oscillator2.start(); // 2つ目のオシレーターもスタート
             } catch (e) {
                 console.warn("Oscillator start failed or already started.", e);
             }
@@ -135,10 +136,7 @@
             const maxMovement = 20; 
             const normalizedMovement = Math.min(movementStrength / maxMovement, 1.0);
 
-            // 揺れの表示は常に更新
-            accelerationDisplay.textContent = movementStrength.toFixed(2);
-
-            const SENSITIVITY_THRESHOLD = 0.01; 
+            const SENSITIVITY_THRESHOLD = 0.02; 
             
             if (normalizedMovement > SENSITIVITY_THRESHOLD) {
                 
@@ -151,51 +149,44 @@
                 // --- 音を鳴らす処理 ---
                 isSounding = true;
                 
+                // 1. 音量を瞬時に立ち上げる (Attack)
                 const attackTime = 0.01;
-                const releaseStartTime = audioContext.currentTime + attackTime;
-                const releaseEndTime = releaseStartTime + RELEASE_TIME; // 音が完全に消える時間
-
-                // 1. 音量 (Gain) の設定
                 gainNode.gain.cancelAndHoldAtTime(audioContext.currentTime);
                 gainNode.gain.linearRampToValueAtTime(fixedGain, audioContext.currentTime + attackTime);
-                gainNode.gain.linearRampToValueAtTime(0, releaseEndTime); // 0になるまで線形に減衰
-
-
-                // 2. 周波数 (Pitch) の設定
-                const pitchRange = 100;
-                const startPitchOffset = normalizedMovement * pitchRange;
-                const startFrequency = baseFrequency + startPitchOffset;
-                const endFrequency = baseFrequency + (startPitchOffset > 20 ? startPitchOffset - 20 : 0);
                 
-                oscillator.frequency.cancelAndHoldAtTime(audioContext.currentTime);
-                oscillator2.frequency.cancelAndHoldAtTime(audioContext.currentTime);
-                oscillator.frequency.linearRampToValueAtTime(startFrequency, audioContext.currentTime + attackTime);
-                oscillator2.frequency.linearRampToValueAtTime(startFrequency, audioContext.currentTime + attackTime);
-                
-                oscillator.frequency.linearRampToValueAtTime(endFrequency, releaseEndTime);
-                oscillator2.frequency.linearRampToValueAtTime(endFrequency, releaseEndTime);
-                
+                // 2. 音の余韻 (Release)
+                const releaseStartTime = audioContext.currentTime + attackTime;
+                gainNode.gain.linearRampToValueAtTime(0, releaseStartTime + RELEASE_TIME);
                 
                 // 3. 余韻が終わったらフラグをリセット
                 setTimeout(() => {
                     isSounding = false;
-                    volumeDisplay.textContent = '0.00';
-                    pitchDisplay.textContent = '0.00'; // ★ 修正: リセット時もピッチを0にする
                 }, (attackTime + RELEASE_TIME) * 1000); 
+                
+                
+                // --- 音色 (ピッチ/周波数) の設定 ---
+                const pitchRange = 100;
+                const newFrequency = baseFrequency + (normalizedMovement * pitchRange); 
+                
+                // ★ 両方のオシレーターの基本周波数を同時に変更
+                oscillator.frequency.linearRampToValueAtTime(newFrequency, audioContext.currentTime + 0.05);
+                oscillator2.frequency.linearRampToValueAtTime(newFrequency, audioContext.currentTime + 0.05);
 
-                // 音が鳴り始めたときのディスプレイ更新
+                // ディスプレイの更新
+                accelerationDisplay.textContent = movementStrength.toFixed(2);
                 volumeDisplay.textContent = fixedGain.toFixed(2);
-                pitchDisplay.textContent = startFrequency.toFixed(2);
+                pitchDisplay.textContent = newFrequency.toFixed(2);
             }
             
-            // 音が鳴っていないとき、ボリュームとピッチをリセット
+            // ディスプレイの更新 (音が鳴っていないとき)
+            accelerationDisplay.textContent = movementStrength.toFixed(2);
             if (!isSounding) {
                  volumeDisplay.textContent = '0.00';
-                 pitchDisplay.textContent = '0.00'; // ★ 修正: 音が鳴っていないときもピッチを0にする
+                 pitchDisplay.textContent = baseFrequency.toFixed(2);
             }
         }
 
-        // --- (startSimulator の関数は変更なし) ---
+        // --- (startSimulator と stopSimulator の関数は変更なし) ---
         async function startSimulator() {
             if (audioContext.state === 'suspended') {
                 await audioContext.resume().catch(e => {
@@ -226,9 +217,6 @@
             }
         }
 
-        /**
-         * モーションセンサーの機能の停止処理
-         */
         function stopSimulator() {
             window.removeEventListener('devicemotion', handleMotion); 
             
@@ -239,8 +227,7 @@
 
             accelerationDisplay.textContent = '0.00';
             volumeDisplay.textContent = '0.00';
-            // ★ 修正: 停止時、ピッチの表示を0.00にリセット
-            pitchDisplay.textContent = '0.00'; 
+            pitchDisplay.textContent = baseFrequency.toFixed(2);
             
             toggleButton.setAttribute('data-state', 'stopped');
             toggleButton.textContent = '動作を再開';
