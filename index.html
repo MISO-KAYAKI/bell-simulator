@@ -94,8 +94,7 @@
 
             oscillator = audioContext.createOscillator();
             // 波形は三角波を使用
-            // oscillator.type = 'triangle'; 
-            oscillator.type = 'sine'; 
+            oscillator.type = 'triangle'; 
             oscillator.frequency.setValueAtTime(baseFrequency, audioContext.currentTime);
             oscillator.connect(gainNode);
 
