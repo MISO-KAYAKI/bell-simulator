@@ -68,11 +68,11 @@
         
         let oscillator = null;
         let gainNode = null;
-        // ★ 修正 1: 基本周波数を1500Hzに上げる
-        const baseFrequency = 1500; 
+        // ★ 修正 1: 基本周波数を2500Hzに上げる (固定値)
+        const baseFrequency = 2500; 
         
         let isSounding = false;
-        // ★ 修正 2: 余韻の長さ (1.0秒)
+        // 余韻の長さ (1.0秒)
         const RELEASE_TIME = 1.0; 
 
         const toggleButton = document.getElementById('toggle-button');
@@ -93,7 +93,8 @@
 
             oscillator = audioContext.createOscillator();
             oscillator.type = 'triangle'; 
-            oscillator.frequency.setValueAtTime(baseFrequency, audioContext.currentTime);
+            // baseFrequencyを設定
+            oscillator.frequency.setValueAtTime(baseFrequency, audioContext.currentTime); 
             oscillator.connect(gainNode);
 
             try {
@@ -151,26 +152,23 @@
                 // Attack: 最大音量へ瞬時に立ち上げ
                 gainNode.gain.linearRampToValueAtTime(fixedGain, audioContext.currentTime + attackTime);
                 
-                // ★ 修正 3: リリース時間(1.0秒)をかけて音量を0へ減衰
+                // Release: リリース時間(1.0秒)をかけて音量を0へ減衰
                 gainNode.gain.linearRampToValueAtTime(0, releaseStartTime + RELEASE_TIME);
+                
+                // 2. ★ 修正 2: 周波数の動的変更ロジックを削除。常に baseFrequency で鳴らす。
+                oscillator.frequency.cancelAndHoldAtTime(audioContext.currentTime);
+                oscillator.frequency.setValueAtTime(baseFrequency, audioContext.currentTime); // 周波数を固定
                 
                 // 3. 余韻が終わったらフラグをリセットし、表示をリセット
                 setTimeout(() => {
                     isSounding = false;
                     volumeDisplay.textContent = '0.00';
-                    pitchDisplay.textContent = '0.00'; // 停止時の表示も0.00にする
+                    pitchDisplay.textContent = '0.00';
                 }, (attackTime + RELEASE_TIME) * 1000); 
-                
-                
-                // --- 音色 (ピッチ/周波数) の設定 ---
-                const pitchRange = 100;
-                // ピッチは揺れの強さに応じて少し変動させる
-                const newFrequency = baseFrequency + (normalizedMovement * pitchRange); 
-                oscillator.frequency.linearRampToValueAtTime(newFrequency, audioContext.currentTime + 0.05);
 
                 // ディスプレイの更新
                 volumeDisplay.textContent = fixedGain.toFixed(2);
-                pitchDisplay.textContent = newFrequency.toFixed(2);
+                pitchDisplay.textContent = baseFrequency.toFixed(2); // 固定周波数を表示
             }
             
             // 音が鳴っていないとき、ボリュームとピッチをリセット
@@ -228,7 +226,7 @@
             // 画面の表示をリセット
             accelerationDisplay.textContent = '0.00';
             volumeDisplay.textContent = '0.00';
-            pitchDisplay.textContent = '0.00'; // 停止時も0.00にリセット
+            pitchDisplay.textContent = '0.00'; 
             
             toggleButton.setAttribute('data-state', 'stopped');
             toggleButton.textContent = '動作を再開';
