@@ -90,7 +90,8 @@
 
             oscillator = audioContext.createOscillator();
             // ★ 波形をサイン波に戻す (クリアな音色)
-            oscillator.type = 'sine'; 
+            // oscillator.type = 'sine'; 
+            oscillator.type = 'triangle'; 
             oscillator.frequency.setValueAtTime(baseFrequency, audioContext.currentTime);
             oscillator.connect(gainNode);
 
