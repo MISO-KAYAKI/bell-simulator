@@ -129,7 +129,7 @@
 
             // --- 音量 (ゲイン) の設定 ---
             // const maxGain = 0.5;
-            const maxGain = 1.5;
+            const maxGain = 3.0;
             const newGain = normalizedMovement * maxGain;
             gainNode.gain.linearRampToValueAtTime(newGain, audioContext.currentTime + 0.05);
 
