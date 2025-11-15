@@ -121,7 +121,6 @@
 
             const acceleration = event.accelerationIncludingGravity;
             if (!acceleration || acceleration.x === null) {
-                 // センサーデータが利用できない場合、ステータスを更新
                  statusDisplay.textContent = 'エラー: センサーデータが利用できません。';
                  return;
             }
@@ -136,7 +135,7 @@
             const maxMovement = 20; 
             const normalizedMovement = Math.min(movementStrength / maxMovement, 1.0);
 
-            // ★ 修正: 揺れの計算後、すぐにディスプレイを更新する
+            // 揺れの表示は常に更新
             accelerationDisplay.textContent = movementStrength.toFixed(2);
 
             const SENSITIVITY_THRESHOLD = 0.01; 
@@ -154,11 +153,12 @@
                 
                 const attackTime = 0.01;
                 const releaseStartTime = audioContext.currentTime + attackTime;
-                
+                const releaseEndTime = releaseStartTime + RELEASE_TIME; // 音が完全に消える時間
+
                 // 1. 音量 (Gain) の設定
                 gainNode.gain.cancelAndHoldAtTime(audioContext.currentTime);
                 gainNode.gain.linearRampToValueAtTime(fixedGain, audioContext.currentTime + attackTime);
-                gainNode.gain.linearRampToValueAtTime(0, releaseStartTime + RELEASE_TIME);
+                gainNode.gain.linearRampToValueAtTime(0, releaseEndTime); // 0になるまで線形に減衰
 
 
                 // 2. 周波数 (Pitch) の設定
@@ -172,13 +172,15 @@
                 oscillator.frequency.linearRampToValueAtTime(startFrequency, audioContext.currentTime + attackTime);
                 oscillator2.frequency.linearRampToValueAtTime(startFrequency, audioContext.currentTime + attackTime);
                 
-                oscillator.frequency.linearRampToValueAtTime(endFrequency, releaseStartTime + RELEASE_TIME);
-                oscillator2.frequency.linearRampToValueAtTime(endFrequency, releaseStartTime + RELEASE_TIME);
+                oscillator.frequency.linearRampToValueAtTime(endFrequency, releaseEndTime);
+                oscillator2.frequency.linearRampToValueAtTime(endFrequency, releaseEndTime);
                 
                 
-                // 3. 余韻が終わったらフラグをリセット
+                // 3. ★ 修正: 音が完全に消える時間に合わせてフラグをリセットし、表示をリセットする
                 setTimeout(() => {
                     isSounding = false;
+                    volumeDisplay.textContent = '0.00';
+                    pitchDisplay.textContent = baseFrequency.toFixed(2);
                 }, (attackTime + RELEASE_TIME) * 1000); 
 
                 // 音が鳴り始めたときのディスプレイ更新
@@ -186,11 +188,8 @@
                 pitchDisplay.textContent = startFrequency.toFixed(2);
             }
             
-            // 音が鳴っていないとき、ボリュームとピッチをリセット
-            if (!isSounding) {
-                 volumeDisplay.textContent = '0.00';
-                 pitchDisplay.textContent = baseFrequency.toFixed(2);
-            }
+            // ★ 修正: isSounding が true の間は、音量表示を更新しない
+            // setTimeout でリセットされるまで、音量・ピッチは固定表示
         }
 
         // --- (startSimulator と stopSimulator の関数は変更なし) ---
