@@ -176,11 +176,11 @@
                 oscillator2.frequency.linearRampToValueAtTime(endFrequency, releaseEndTime);
                 
                 
-                // 3. ★ 修正: 音が完全に消える時間に合わせてフラグをリセットし、表示をリセットする
+                // 3. 余韻が終わったらフラグをリセット
                 setTimeout(() => {
                     isSounding = false;
                     volumeDisplay.textContent = '0.00';
-                    pitchDisplay.textContent = baseFrequency.toFixed(2);
+                    pitchDisplay.textContent = '0.00'; // ★ 修正: リセット時もピッチを0にする
                 }, (attackTime + RELEASE_TIME) * 1000); 
 
                 // 音が鳴り始めたときのディスプレイ更新
@@ -188,11 +188,14 @@
                 pitchDisplay.textContent = startFrequency.toFixed(2);
             }
             
-            // ★ 修正: isSounding が true の間は、音量表示を更新しない
-            // setTimeout でリセットされるまで、音量・ピッチは固定表示
+            // 音が鳴っていないとき、ボリュームとピッチをリセット
+            if (!isSounding) {
+                 volumeDisplay.textContent = '0.00';
+                 pitchDisplay.textContent = '0.00'; // ★ 修正: 音が鳴っていないときもピッチを0にする
+            }
         }
 
-        // --- (startSimulator と stopSimulator の関数は変更なし) ---
+        // --- (startSimulator の関数は変更なし) ---
         async function startSimulator() {
             if (audioContext.state === 'suspended') {
                 await audioContext.resume().catch(e => {
@@ -223,6 +226,9 @@
             }
         }
 
+        /**
+         * モーションセンサーの機能の停止処理
+         */
         function stopSimulator() {
             window.removeEventListener('devicemotion', handleMotion); 
             
@@ -233,7 +239,8 @@
 
             accelerationDisplay.textContent = '0.00';
             volumeDisplay.textContent = '0.00';
-            pitchDisplay.textContent = baseFrequency.toFixed(2);
+            // ★ 修正: 停止時、ピッチの表示を0.00にリセット
+            pitchDisplay.textContent = '0.00'; 
             
             toggleButton.setAttribute('data-state', 'stopped');
             toggleButton.textContent = '動作を再開';
