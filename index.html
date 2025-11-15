@@ -31,11 +31,11 @@
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); 
             transition: background-color 0.3s;
         }
-        /* 初期状態（停止中）のスタイル */
+        /* 停止中 (Stopped) のスタイル */
         #toggle-button[data-state="stopped"] {
             background-color: #007bff; /* 青 */
         }
-        /* 実行中のスタイル */
+        /* 実行中 (Running) のスタイル */
         #toggle-button[data-state="running"] {
             background-color: #dc3545; /* 赤 */
         }
@@ -68,7 +68,8 @@
         
         let oscillator = null;
         let gainNode = null;
-        const baseFrequency = 500; // 基本の周波数 (Hz)
+        // ★ 基本周波数を1000Hzに設定し、音域を高くする
+        const baseFrequency = 1000; 
 
         // HTML要素の参照
         const toggleButton = document.getElementById('toggle-button');
@@ -88,8 +89,8 @@
             gainNode.connect(audioContext.destination);
 
             oscillator = audioContext.createOscillator();
-            // ★音色改善1: 波形をノコギリ波に変更
-            oscillator.type = 'sawtooth'; 
+            // ★ 波形をサイン波に戻す (クリアな音色)
+            oscillator.type = 'sine'; 
             oscillator.frequency.setValueAtTime(baseFrequency, audioContext.currentTime);
             oscillator.connect(gainNode);
 
@@ -112,7 +113,7 @@
                  return;
             }
 
-            // 揺れの強さを計算
+            // 揺れの強さ (m/s²) を計算
             const totalAcceleration = Math.sqrt(
                 acceleration.x * acceleration.x +
                 acceleration.y * acceleration.y +
@@ -122,8 +123,8 @@
             const maxMovement = 20; 
             const normalizedMovement = Math.min(movementStrength / maxMovement, 1.0);
 
-            // --- 音量 (ゲイン) の設定 (音色改善2: エンベロープと最大音量) ---
-            const maxGain = 1.0; // ★音量を最大 (100%) に設定
+            // --- 音量 (ゲイン) の設定 (エンベロープと最大音量) ---
+            const maxGain = 1.0; 
             const newGain = normalizedMovement * maxGain;
             
             // 揺れの強さが閾値以上（0.05以上）であれば音を出す
@@ -132,8 +133,9 @@
                 gainNode.gain.cancelAndHoldAtTime(audioContext.currentTime);
                 gainNode.gain.linearRampToValueAtTime(newGain, audioContext.currentTime + 0.01);
             } else {
-                // 揺れが弱い、または止まったら急速に減衰させる (Decay/Release)
-                gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.1); 
+                // ★ 揺れが弱い、または止まったら急速に減衰させる (Decay/Release)
+                // 減衰時間を短くし、チリンチリンという粒感を出す
+                gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.05); 
             }
 
             // --- 音色 (ピッチ/周波数) の設定 ---
@@ -159,7 +161,7 @@
                 });
             }
 
-            // iOS 13+ の権限要求 (Androidでは不要だが、実行しても問題なし)
+            // iOS 13+ の権限要求
             let permissionGranted = true;
             if (typeof DeviceOrientationEvent.requestPermission === 'function') {
                 try {
