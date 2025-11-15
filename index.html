@@ -5,43 +5,47 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>クマ鈴シミュレーター</title>
     <style>
-        /* CSS: Googleサイトの埋め込みiFrame内でクリックしやすいように調整 */
         body {
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            /* 埋め込みiFrameの領域を明確にする */
             min-height: 350px; 
             text-align: center;
             font-family: sans-serif;
             background-color: #f7f7f7;
             padding: 20px;
-            margin: 0; /* マージンをリセットして埋め込み領域を最大化 */
+            margin: 0;
         }
         h1 {
             font-size: 1.5em;
         }
-        #start-button {
+        #toggle-button {
             padding: 15px 35px;
             font-size: 1.3em;
             cursor: pointer;
             border: none;
-            background-color: #007bff; /* 目立つ色に変更 */
             color: white;
             border-radius: 8px;
             margin: 15px 0;
-            /* タッチ操作しやすいように影を付ける */
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); 
             transition: background-color 0.3s;
         }
-        #start-button:active {
-            background-color: #0056b3;
+        /* 初期状態（停止中）のスタイル */
+        #toggle-button[data-state="stopped"] {
+            background-color: #007bff; /* 青 */
+        }
+        /* 実行中のスタイル */
+        #toggle-button[data-state="running"] {
+            background-color: #dc3545; /* 赤 */
+        }
+        #toggle-button:active {
+            opacity: 0.8;
         }
         #status {
             margin-top: 10px;
             font-weight: bold;
-            color: #cc0000;
+            color: #333;
         }
     </style>
 </head>
@@ -50,7 +54,7 @@
     <h1>🐻 クマ鈴シミュレーター</h1>
     <p>スマートフォンを揺らして音を鳴らしてください。</p>
 
-    <button id="start-button">タップしてセンサーと音を有効化</button>
+    <button id="toggle-button" data-state="stopped">タップしてセンサーを有効化</button>
 
     <div id="status">ステータス: 待機中（上のボタンを押してください）</div>
 
@@ -59,8 +63,6 @@
     <p>現在の音色 (ピッチ/Hz): <span id="pitch-display">0.00</span></p>
 
     <script>
-        // Web Audio APIの初期化
-        // 互換性のため、ベンダープレフィックス (webkit) も考慮
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         const audioContext = new AudioContext();
         
@@ -69,7 +71,7 @@
         const baseFrequency = 500; // 基本の周波数 (Hz)
 
         // HTML要素の参照
-        const startButton = document.getElementById('start-button');
+        const toggleButton = document.getElementById('toggle-button');
         const statusDisplay = document.getElementById('status');
         const accelerationDisplay = document.getElementById('acceleration-display');
         const volumeDisplay = document.getElementById('volume-display');
@@ -79,20 +81,18 @@
          * Web Audio APIのセットアップ
          */
         function setupAudio() {
-            if (gainNode) return; // 既にセットアップ済みならスキップ
+            if (gainNode) return; 
 
-            // ゲインノード (音量調整用)
             gainNode = audioContext.createGain();
             gainNode.gain.setValueAtTime(0, audioContext.currentTime); 
             gainNode.connect(audioContext.destination);
 
-            // オシレーターノード (音源)
             oscillator = audioContext.createOscillator();
-            oscillator.type = 'sine'; // 正弦波
+            // ★音色改善1: 波形をノコギリ波に変更
+            oscillator.type = 'sawtooth'; 
             oscillator.frequency.setValueAtTime(baseFrequency, audioContext.currentTime);
             oscillator.connect(gainNode);
 
-            // 再生開始
             try {
                 oscillator.start();
             } catch (e) {
@@ -104,7 +104,6 @@
          * モーションイベントを処理し、音量とピッチを制御
          */
         function handleMotion(event) {
-            // AudioContextが動作していない場合は処理を中断
             if (!gainNode || audioContext.state !== 'running') return; 
 
             const acceleration = event.accelerationIncludingGravity;
@@ -113,28 +112,32 @@
                  return;
             }
 
-            // 揺れの強さ (重力加速度 9.8m/s² からの変動分) を計算
+            // 揺れの強さを計算
             const totalAcceleration = Math.sqrt(
                 acceleration.x * acceleration.x +
                 acceleration.y * acceleration.y +
                 acceleration.z * acceleration.z
             );
-
-            // 重力 (9.8) からどれだけ変化したかを「揺れの強さ」とする
             const movementStrength = Math.abs(totalAcceleration - 9.8); 
-            
-            // 揺れの強さを0.0〜1.0に正規化
             const maxMovement = 20; 
             const normalizedMovement = Math.min(movementStrength / maxMovement, 1.0);
 
-            // --- 音量 (ゲイン) の設定 ---
-            // const maxGain = 0.5;
-            const maxGain = 3.0;
+            // --- 音量 (ゲイン) の設定 (音色改善2: エンベロープと最大音量) ---
+            const maxGain = 1.0; // ★音量を最大 (100%) に設定
             const newGain = normalizedMovement * maxGain;
-            gainNode.gain.linearRampToValueAtTime(newGain, audioContext.currentTime + 0.05);
+            
+            // 揺れの強さが閾値以上（0.05以上）であれば音を出す
+            if (newGain > 0.05) {
+                // 揺れを検出したらすぐに最大音量まで立ち上げる (Attack)
+                gainNode.gain.cancelAndHoldAtTime(audioContext.currentTime);
+                gainNode.gain.linearRampToValueAtTime(newGain, audioContext.currentTime + 0.01);
+            } else {
+                // 揺れが弱い、または止まったら急速に減衰させる (Decay/Release)
+                gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.1); 
+            }
 
             // --- 音色 (ピッチ/周波数) の設定 ---
-            const pitchRange = 100; // 変化範囲
+            const pitchRange = 100;
             const newFrequency = baseFrequency + (normalizedMovement * pitchRange);
             oscillator.frequency.linearRampToValueAtTime(newFrequency, audioContext.currentTime + 0.05);
 
@@ -145,43 +148,72 @@
         }
 
         /**
-         * スタートボタンのクリックハンドラ
+         * モーションセンサーの機能の開始処理
          */
-        startButton.addEventListener('click', async () => {
-            // 1. AudioContextの再開 (自動再生ポリシー対策)
+        async function startSimulator() {
+            // AudioContextの再開
             if (audioContext.state === 'suspended') {
                 await audioContext.resume().catch(e => {
-                    console.error("AudioContext resume failed:", e);
                     statusDisplay.textContent = 'エラー: 音声再生の開始に失敗しました。';
                     return;
                 });
             }
 
-            // 2. モーションセンサーの権限要求 (iOS 13+ のみ)
+            // iOS 13+ の権限要求 (Androidでは不要だが、実行しても問題なし)
             let permissionGranted = true;
-            
             if (typeof DeviceOrientationEvent.requestPermission === 'function') {
                 try {
                     const permissionState = await DeviceOrientationEvent.requestPermission();
                     if (permissionState !== 'granted') {
                         permissionGranted = false;
-                        statusDisplay.textContent = 'エラー: センサー権限が拒否されました。設定を確認してください。';
                     }
                 } catch (e) {
-                    // requestPermissionが利用可能だが失敗した場合
-                    console.error("Permission request failed:", e);
+                    
                 }
             }
             
-            // Androidや権限要求が不要な環境、または権限が許可された場合
             if (permissionGranted) {
                 setupAudio(); // オーディオのセットアップ
-                window.addEventListener('devicemotion', handleMotion);
+                window.addEventListener('devicemotion', handleMotion); // イベントリスナーを登録
                 
+                toggleButton.setAttribute('data-state', 'running');
+                toggleButton.textContent = '動作を一時停止 (音が鳴ります)';
                 statusDisplay.textContent = 'ステータス: 実行中！デバイスを揺らしてください。';
-                startButton.textContent = '有効化済み';
-                startButton.disabled = true;
-                startButton.style.backgroundColor = '#28a745'; // 成功した色
+            }
+        }
+
+        /**
+         * モーションセンサーの機能の停止処理
+         */
+        function stopSimulator() {
+            window.removeEventListener('devicemotion', handleMotion); // イベントリスナーを解除
+            
+            // 音量をすぐにゼロにする
+            if (gainNode) {
+                 gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+            }
+
+            // 画面の表示をリセット
+            accelerationDisplay.textContent = '0.00';
+            volumeDisplay.textContent = '0.00';
+            pitchDisplay.textContent = baseFrequency.toFixed(2);
+            
+            toggleButton.setAttribute('data-state', 'stopped');
+            toggleButton.textContent = '動作を再開';
+            statusDisplay.textContent = 'ステータス: 停止中（センサー無効）';
+        }
+
+
+        /**
+         * トグルボタンのクリックハンドラ
+         */
+        toggleButton.addEventListener('click', () => {
+            const currentState = toggleButton.getAttribute('data-state');
+            
+            if (currentState === 'stopped') {
+                startSimulator(); // 停止中なら開始
+            } else {
+                stopSimulator();  // 実行中なら停止
             }
         });
     </script>
