@@ -67,13 +67,13 @@
         const audioContext = new AudioContext();
         
         let oscillator = null;
+        let oscillator2 = null;
         let gainNode = null;
         const baseFrequency = 1000; 
         
-        // ★連打防止のためのフラグ
         let isSounding = false;
-        // ★ 余韻の長さ (400ミリ秒 = 0.4秒)
         const RELEASE_TIME = 0.4; 
+        const DETUNE_CENTS = 5; 
 
         // HTML要素の参照
         const toggleButton = document.getElementById('toggle-button');
@@ -92,14 +92,22 @@
             gainNode.gain.setValueAtTime(0, audioContext.currentTime); 
             gainNode.connect(audioContext.destination);
 
+            // 1つ目のオシレーター (基本音)
             oscillator = audioContext.createOscillator();
-            // 波形は三角波を使用
             oscillator.type = 'triangle'; 
             oscillator.frequency.setValueAtTime(baseFrequency, audioContext.currentTime);
             oscillator.connect(gainNode);
+            
+            // 2つ目のオシレーター (デチューン音)
+            oscillator2 = audioContext.createOscillator();
+            oscillator2.type = 'triangle'; 
+            oscillator2.frequency.setValueAtTime(baseFrequency, audioContext.currentTime);
+            oscillator2.detune.setValueAtTime(DETUNE_CENTS, audioContext.currentTime);
+            oscillator2.connect(gainNode);
 
             try {
                 oscillator.start();
+                oscillator2.start();
             } catch (e) {
                 console.warn("Oscillator start failed or already started.", e);
             }
@@ -127,52 +135,61 @@
             const maxMovement = 20; 
             const normalizedMovement = Math.min(movementStrength / maxMovement, 1.0);
 
-            // 揺れの感度閾値 (小さな動きでも音を鳴らす)
             const SENSITIVITY_THRESHOLD = 0.02; 
             
-            // 揺れの大きさが閾値を超えた AND 現在音が鳴っていない
             if (normalizedMovement > SENSITIVITY_THRESHOLD) {
                 
                 if (isSounding) {
-                    // ★ 音が鳴り終わるまで次の音は鳴らさない (連打防止)
                     return; 
                 }
 
-                // ★ 音量固定: 揺れの大きさに関わらず最大音量(1.0)で鳴らす
                 const fixedGain = 1.0; 
                 
                 // --- 音を鳴らす処理 ---
                 isSounding = true;
                 
-                // 1. 音量を瞬時に立ち上げる (Attack)
                 const attackTime = 0.01;
-                gainNode.gain.cancelAndHoldAtTime(audioContext.currentTime);
-                gainNode.gain.linearRampToValueAtTime(fixedGain, audioContext.currentTime + attackTime);
-                
-                // 2. 音の余韻 (Release)
                 const releaseStartTime = audioContext.currentTime + attackTime;
+                
+                // --- 1. 音量 (Gain) の設定 (余韻で小さく) ---
+                gainNode.gain.cancelAndHoldAtTime(audioContext.currentTime);
+                // Attack: 最大音量へ瞬時に立ち上げ
+                gainNode.gain.linearRampToValueAtTime(fixedGain, audioContext.currentTime + attackTime);
+                // Release: 余韻時間で線形的に0.0へ減衰
                 gainNode.gain.linearRampToValueAtTime(0, releaseStartTime + RELEASE_TIME);
+
+
+                // --- 2. 周波数 (Pitch) の設定 (余韻で低く) ---
+                const pitchRange = 100;
+                // 揺れによる開始時のピッチ変動
+                const startPitchOffset = normalizedMovement * pitchRange;
+                const startFrequency = baseFrequency + startPitchOffset;
+                // 余韻終了時の目標ピッチ (元のピッチから20Hz下げる)
+                const endFrequency = baseFrequency + (startPitchOffset > 20 ? startPitchOffset - 20 : 0);
+                
+                // Attack: 開始周波数へ瞬時に立ち上げ
+                oscillator.frequency.cancelAndHoldAtTime(audioContext.currentTime);
+                oscillator2.frequency.cancelAndHoldAtTime(audioContext.currentTime);
+                oscillator.frequency.linearRampToValueAtTime(startFrequency, audioContext.currentTime + attackTime);
+                oscillator2.frequency.linearRampToValueAtTime(startFrequency, audioContext.currentTime + attackTime);
+                
+                // Release: 余韻時間で目標ピッチへ線形的に減衰
+                oscillator.frequency.linearRampToValueAtTime(endFrequency, releaseStartTime + RELEASE_TIME);
+                oscillator2.frequency.linearRampToValueAtTime(endFrequency, releaseStartTime + RELEASE_TIME);
+                
                 
                 // 3. 余韻が終わったらフラグをリセット
                 setTimeout(() => {
                     isSounding = false;
-                }, (attackTime + RELEASE_TIME) * 1000); // ミリ秒に変換
-                
-                
-                // --- 音色 (ピッチ/周波数) の設定 ---
-                const pitchRange = 100;
-                // ピッチは揺れの強さに応じて少し変動させる
-                const newFrequency = baseFrequency + (normalizedMovement * pitchRange); 
-                oscillator.frequency.linearRampToValueAtTime(newFrequency, audioContext.currentTime + 0.05);
+                }, (attackTime + RELEASE_TIME) * 1000); 
 
                 // ディスプレイの更新
                 accelerationDisplay.textContent = movementStrength.toFixed(2);
                 volumeDisplay.textContent = fixedGain.toFixed(2);
-                pitchDisplay.textContent = newFrequency.toFixed(2);
+                pitchDisplay.textContent = startFrequency.toFixed(2); // 開始周波数を表示
             }
-            // ★ 余韻中は音量表示を維持するため、elseブロックを削除
             
-            // ディスプレイの更新 (音が鳴っていないときも、揺れの情報は更新)
+            // ディスプレイの更新 (音が鳴っていないとき)
             accelerationDisplay.textContent = movementStrength.toFixed(2);
             if (!isSounding) {
                  volumeDisplay.textContent = '0.00';
@@ -180,9 +197,7 @@
             }
         }
 
-        /**
-         * モーションセンサーの機能の開始処理
-         */
+        // --- (startSimulator と stopSimulator の関数は変更なし) ---
         async function startSimulator() {
             if (audioContext.state === 'suspended') {
                 await audioContext.resume().catch(e => {
@@ -213,19 +228,14 @@
             }
         }
 
-        /**
-         * モーションセンサーの機能の停止処理
-         */
         function stopSimulator() {
             window.removeEventListener('devicemotion', handleMotion); 
             
-            // 音量をすぐにゼロにする
             if (gainNode) {
                  gainNode.gain.setValueAtTime(0, audioContext.currentTime);
             }
-            isSounding = false; // フラグもリセット
+            isSounding = false; 
 
-            // 画面の表示をリセット
             accelerationDisplay.textContent = '0.00';
             volumeDisplay.textContent = '0.00';
             pitchDisplay.textContent = baseFrequency.toFixed(2);
@@ -235,10 +245,9 @@
             statusDisplay.textContent = 'ステータス: 停止中（センサー無効）';
         }
 
-
-        /**
-         * トグルボタンのクリックハンドラ
-         */
+        function addEventListener(event, handler) {
+            // トグルボタンのクリックハンドラ
+        }
         toggleButton.addEventListener('click', () => {
             const currentState = toggleButton.getAttribute('data-state');
             
