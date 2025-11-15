@@ -68,7 +68,6 @@
         
         let oscillator = null;
         let gainNode = null;
-        // ★ 基本周波数を1000Hzに設定し、音域を高くする
         const baseFrequency = 1000; 
 
         // HTML要素の参照
@@ -89,8 +88,7 @@
             gainNode.connect(audioContext.destination);
 
             oscillator = audioContext.createOscillator();
-            // ★ 波形をサイン波に戻す (クリアな音色)
-            // oscillator.type = 'sine'; 
+            // ★ 波形を三角波に戻す
             oscillator.type = 'triangle'; 
             oscillator.frequency.setValueAtTime(baseFrequency, audioContext.currentTime);
             oscillator.connect(gainNode);
@@ -128,15 +126,14 @@
             const maxGain = 1.0; 
             const newGain = normalizedMovement * maxGain;
             
-            // 揺れの強さが閾値以上（0.05以上）であれば音を出す
-            if (newGain > 0.05) {
+            // ★ 揺れの感度閾値を0.05から0.02に下げ、小さな動きでも鳴るようにする
+            if (newGain > 0.02) {
                 // 揺れを検出したらすぐに最大音量まで立ち上げる (Attack)
                 gainNode.gain.cancelAndHoldAtTime(audioContext.currentTime);
                 gainNode.gain.linearRampToValueAtTime(newGain, audioContext.currentTime + 0.01);
             } else {
-                // ★ 揺れが弱い、または止まったら急速に減衰させる (Decay/Release)
-                // 減衰時間を短くし、チリンチリンという粒感を出す
-                gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.05); 
+                // ★ 減衰時間を0.05秒から0.01秒に短縮し、メリハリを付ける
+                gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.01); 
             }
 
             // --- 音色 (ピッチ/周波数) の設定 ---
