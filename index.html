@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>クマ鈴シミュレーター</title>
+    <title>クマ鈴シミュレーター (カウベル音色)</title>
     <style>
         body {
             display: flex;
@@ -51,7 +51,7 @@
 </head>
 <body>
 
-    <h1>🐻 クマ鈴シミュレーター</h1>
+    <h1>🐻 クマ鈴シミュレーター (カウベル音色)</h1>
     <p>スマートフォンを揺らして音を鳴らしてください。</p>
 
     <button id="toggle-button" data-state="stopped">タップしてセンサーを有効化</button>
@@ -63,17 +63,17 @@
     <p>現在の音色 (ピッチ/Hz): <span id="pitch-display">0.00</span></p>
 
     <script>
+        // AudioContextはグローバルに保持
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         const audioContext = new AudioContext();
         
-        let oscillator = null;
-        let gainNode = null;
-        // ★ 修正 1: 基本周波数を1800Hzに上げる (固定値)
-        const baseFrequency = 1800; 
+        // カウベルの音色データ
+        const COWBELL_DURATION = 0.7;
+        const FREQ_LOW = 540;
+        const FREQ_HIGH = 800;
+        const FILTER_FREQ = 2500;
         
-        let isSounding = false;
-        // 余韻の長さ (1.0秒)
-        const RELEASE_TIME = 1.0; 
+        let isSounding = false; // 連打防止フラグ
 
         const toggleButton = document.getElementById('toggle-button');
         const statusDisplay = document.getElementById('status');
@@ -82,33 +82,78 @@
         const pitchDisplay = document.getElementById('pitch-display');
 
         /**
-         * Web Audio APIのセットアップ
+         * Web Audio APIのセットアップ (ここでは、Contextが作られているか確認するのみ)
          */
         function setupAudio() {
-            if (gainNode) return; 
-
-            gainNode = audioContext.createGain();
-            gainNode.gain.setValueAtTime(0, audioContext.currentTime); 
-            gainNode.connect(audioContext.destination);
-
-            oscillator = audioContext.createOscillator();
-            oscillator.type = 'triangle'; 
-            // baseFrequencyを設定
-            oscillator.frequency.setValueAtTime(baseFrequency, audioContext.currentTime); 
-            oscillator.connect(gainNode);
-
-            try {
-                oscillator.start();
-            } catch (e) {
-                console.warn("Oscillator start failed or already started.", e);
-            }
+             // 従来のオシレーター接続は行わない
+             if (audioContext.state === 'suspended') {
+                audioContext.resume();
+             }
         }
 
         /**
-         * モーションイベントを処理し、音量とピッチを制御
+         * 揺れが検知されたときにカウベルの音を鳴らす
+         */
+        function playCowbellSound() {
+            const now = audioContext.currentTime;
+            
+            // 1. ゲイン（音量）ノード (エンベロープ制御用)
+            const gainNode = audioContext.createGain();
+            gainNode.connect(audioContext.destination);
+            
+            // エンベロープ設定: 減衰時間 0.7秒
+            gainNode.gain.setValueAtTime(0.01, now); 
+            gainNode.gain.linearRampToValueAtTime(0.5, now + 0.005); // 素早いアタック
+            gainNode.gain.exponentialRampToValueAtTime(0.001, now + COWBELL_DURATION); // ゆっくりとしたディケイ
+
+            // 2. バンドパスフィルター
+            const filter = audioContext.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.setValueAtTime(FILTER_FREQ, now);
+            filter.Q.setValueAtTime(5, now);
+            filter.connect(gainNode);
+
+            // 3. オシレーター 1 (矩形波)
+            const osc1 = audioContext.createOscillator();
+            osc1.type = 'square';
+            osc1.frequency.setValueAtTime(FREQ_LOW, now);
+            osc1.connect(filter);
+            
+            // 4. オシレーター 2 (矩形波)
+            const osc2 = audioContext.createOscillator();
+            osc2.type = 'square';
+            osc2.frequency.setValueAtTime(FREQ_HIGH, now);
+            osc2.connect(filter);
+            
+            // 5. ノードの開始と停止
+            osc1.start(now);
+            osc2.start(now);
+            
+            // 0.7秒後にオシレーターを停止
+            osc1.stop(now + COWBELL_DURATION);
+            osc2.stop(now + COWBELL_DURATION);
+
+            // --- 表示と連打防止フラグのリセット ---
+            isSounding = true;
+            
+            // 表示を更新 (今回は固定値)
+            volumeDisplay.textContent = '0.50';
+            // ピッチ表示は代表値として低い方の周波数を表示
+            pitchDisplay.textContent = FREQ_LOW.toFixed(2); 
+
+            // 減衰時間 (0.7秒) 後にフラグと表示をリセット
+            setTimeout(() => {
+                isSounding = false;
+                volumeDisplay.textContent = '0.00';
+                pitchDisplay.textContent = '0.00';
+            }, COWBELL_DURATION * 1000);
+        }
+
+        /**
+         * モーションイベントを処理
          */
         function handleMotion(event) {
-            if (!gainNode || audioContext.state !== 'running') return; 
+            if (audioContext.state !== 'running') return; 
 
             const acceleration = event.accelerationIncludingGravity;
             if (!acceleration || acceleration.x === null) {
@@ -129,46 +174,17 @@
             // 揺れの表示は常に更新
             accelerationDisplay.textContent = movementStrength.toFixed(2);
 
-            // 揺れの感度閾値 (小さな動きでも音を鳴らす)
+            // 揺れの感度閾値
             const SENSITIVITY_THRESHOLD = 0.02; 
             
             if (normalizedMovement > SENSITIVITY_THRESHOLD) {
                 
                 if (isSounding) {
-                    // 音が鳴り終わるまで次の音は鳴らさない (連打防止)
                     return; 
                 }
 
-                const fixedGain = 1.0; 
-                
-                // --- 音を鳴らす処理 ---
-                isSounding = true;
-                
-                const attackTime = 0.01;
-                const releaseStartTime = audioContext.currentTime + attackTime;
-                
-                // 1. 音量 (Gain) の設定
-                gainNode.gain.cancelAndHoldAtTime(audioContext.currentTime);
-                // Attack: 最大音量へ瞬時に立ち上げ
-                gainNode.gain.linearRampToValueAtTime(fixedGain, audioContext.currentTime + attackTime);
-                
-                // Release: リリース時間(1.0秒)をかけて音量を0へ減衰
-                gainNode.gain.linearRampToValueAtTime(0, releaseStartTime + RELEASE_TIME);
-                
-                // 2. ★ 修正 2: 周波数の動的変更ロジックを削除。常に baseFrequency で鳴らす。
-                oscillator.frequency.cancelAndHoldAtTime(audioContext.currentTime);
-                oscillator.frequency.setValueAtTime(baseFrequency, audioContext.currentTime); // 周波数を固定
-                
-                // 3. 余韻が終わったらフラグをリセットし、表示をリセット
-                setTimeout(() => {
-                    isSounding = false;
-                    volumeDisplay.textContent = '0.00';
-                    pitchDisplay.textContent = '0.00';
-                }, (attackTime + RELEASE_TIME) * 1000); 
-
-                // ディスプレイの更新
-                volumeDisplay.textContent = fixedGain.toFixed(2);
-                pitchDisplay.textContent = baseFrequency.toFixed(2); // 固定周波数を表示
+                // カウベルの音を鳴らす
+                playCowbellSound();
             }
             
             // 音が鳴っていないとき、ボリュームとピッチをリセット
@@ -197,7 +213,7 @@
                         permissionGranted = false;
                     }
                 } catch (e) {
-                    
+                    // iPhoneなどで許可が不要な場合も含む
                 }
             }
             
@@ -217,10 +233,6 @@
         function stopSimulator() {
             window.removeEventListener('devicemotion', handleMotion); 
             
-            // 音量をすぐにゼロにする
-            if (gainNode) {
-                 gainNode.gain.setValueAtTime(0, audioContext.currentTime);
-            }
             isSounding = false; // フラグもリセット
 
             // 画面の表示をリセット
