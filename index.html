@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>クマ鈴シミュレーター (スライダー余韻調整版)</title>
+    <title>クマ鈴シミュレーター (3スライダー調整版)</title>
     <style>
         body {
             display: flex;
@@ -31,11 +31,9 @@
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); 
             transition: background-color 0.3s;
         }
-        /* 停止中 (Stopped) のスタイル - 色を復活 */
         #toggle-button[data-state="stopped"] {
             background-color: #007bff; /* 青 */
         }
-        /* 実行中 (Running) のスタイル - 色を復活 */
         #toggle-button[data-state="running"] {
             background-color: #dc3545; /* 赤 */
         }
@@ -47,36 +45,70 @@
             font-weight: bold;
             color: #333;
         }
+        /* スライダーコンテナのスタイル */
+        .slider-control {
+            margin: 10px 0;
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #fff;
+            width: 300px;
+            text-align: left;
+        }
+        .slider-control label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .slider-control input[type="range"] {
+            width: 100%;
+        }
     </style>
 </head>
 <body>
 
-    <h1>🐻 クマ鈴シミュレーター (スライダー余韻調整版)</h1>
+    <h1>🐻 クマ鈴シミュレーター (3スライダー調整版)</h1>
     <p>スマートフォンを揺らして音を鳴らしてください。</p>
 
     <button id="toggle-button" data-state="stopped">タップしてセンサーを有効化</button>
 
     <div id="status">ステータス: 待機中（上のボタンを押してください）</div>
 
-    <div style="margin: 20px 0;">
+    <div class="slider-control">
         <label for="decay-slider">余韻時間 (Release Time):</label>
         <input type="range" id="decay-slider" min="0.5" max="2.0" step="0.1" value="2.0">
         <span id="decay-display">2.0</span> 秒
     </div>
 
+    <div class="slider-control">
+        <label for="freq-low-slider">低周波数 (Low Freq):</label>
+        <input type="range" id="freq-low-slider" min="440" max="640" step="10" value="540">
+        <span id="freq-low-display">540</span> Hz
+    </div>
+
+    <div class="slider-control">
+        <label for="freq-high-slider">高周波数 (High Freq):</label>
+        <input type="range" id="freq-high-slider" min="700" max="900" step="10" value="800">
+        <span id="freq-high-display">800</span> Hz
+    </div>
+    
+    <hr style="width: 80%; margin: 20px 0;">
+
     <p>現在の揺れの強さ (m/s²): <span id="acceleration-display">0.00</span></p>
     <p>現在の音量 (ゲイン): <span id="volume-display">0.00</span></p>
-    <p>現在の音色 (ピッチ/Hz): <span id="pitch-display">0.00</span></p>
+    <p>現在の音色 (低ピッチ/Hz): <span id="pitch-display">0.00</span></p>
 
     <script>
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         const audioContext = new AudioContext();
         
-        // カウベルの音色データ
+        // ★ 変更点 2: 周波数も動的に変更されるように let で宣言
         let COWBELL_DURATION = 2.0; 
-        const FREQ_LOW = 540;
-        const FREQ_HIGH = 800;
-        const FILTER_FREQ = 2500;
+        let FREQ_LOW = 540;   
+        let FREQ_HIGH = 800;  
+        
+        // フィルター周波数は固定
+        const FILTER_FREQ = 2500; 
         
         let isSounding = false; // 連打防止フラグ
 
@@ -86,14 +118,32 @@
         const volumeDisplay = document.getElementById('volume-display');
         const pitchDisplay = document.getElementById('pitch-display');
         
+        // 要素の参照
         const decaySlider = document.getElementById('decay-slider');
         const decayDisplay = document.getElementById('decay-display');
+        const freqLowSlider = document.getElementById('freq-low-slider');
+        const freqLowDisplay = document.getElementById('freq-low-display');
+        const freqHighSlider = document.getElementById('freq-high-slider');
+        const freqHighDisplay = document.getElementById('freq-high-display');
         
-        // スライダーイベントリスナーを設定
+        // ★ 変更点 3: スライダーイベントリスナーを設定
+        
+        // 余韻時間スライダー
         decaySlider.addEventListener('input', (e) => {
-            // スライダーの値をCOWBELL_DURATION変数に反映し、表示を更新
             COWBELL_DURATION = parseFloat(e.target.value);
             decayDisplay.textContent = COWBELL_DURATION.toFixed(1);
+        });
+        
+        // 低周波数スライダー
+        freqLowSlider.addEventListener('input', (e) => {
+            FREQ_LOW = parseInt(e.target.value);
+            freqLowDisplay.textContent = FREQ_LOW;
+        });
+        
+        // 高周波数スライダー
+        freqHighSlider.addEventListener('input', (e) => {
+            FREQ_HIGH = parseInt(e.target.value);
+            freqHighDisplay.textContent = FREQ_HIGH;
         });
 
 
@@ -112,12 +162,12 @@
         function playCowbellSound() {
             const now = audioContext.currentTime;
             
-            // カウベル音色ロジック (COWBELL_DURATIONが動的に参照される)
+            // カウベル音色ロジック: COWBELL_DURATION, FREQ_LOW, FREQ_HIGHが動的に参照される
+
             const gainNode = audioContext.createGain();
             gainNode.connect(audioContext.destination);
             gainNode.gain.setValueAtTime(0.01, now); 
             gainNode.gain.linearRampToValueAtTime(0.5, now + 0.005); 
-            // COWBELL_DURATION (スライダーの値) を使用して減衰時間を設定
             gainNode.gain.exponentialRampToValueAtTime(0.001, now + COWBELL_DURATION); 
 
             const filter = audioContext.createBiquadFilter();
@@ -128,26 +178,25 @@
 
             const osc1 = audioContext.createOscillator();
             osc1.type = 'square';
-            osc1.frequency.setValueAtTime(FREQ_LOW, now);
+            osc1.frequency.setValueAtTime(FREQ_LOW, now); // ★ FREQ_LOWを適用
             osc1.connect(filter);
             
             const osc2 = audioContext.createOscillator();
             osc2.type = 'square';
-            osc2.frequency.setValueAtTime(FREQ_HIGH, now);
+            osc2.frequency.setValueAtTime(FREQ_HIGH, now); // ★ FREQ_HIGHを適用
             osc2.connect(filter);
             
             osc1.start(now);
             osc2.start(now);
-            // COWBELL_DURATION (スライダーの値) を使用してオシレーターの停止時間を設定
             osc1.stop(now + COWBELL_DURATION);
             osc2.stop(now + COWBELL_DURATION);
 
             // --- 表示と連打防止フラグのリセット ---
             isSounding = true;
             volumeDisplay.textContent = '0.50';
-            pitchDisplay.textContent = FREQ_LOW.toFixed(2); 
+            // 代表値として低い周波数を表示
+            pitchDisplay.textContent = FREQ_LOW.toFixed(0); 
 
-            // COWBELL_DURATION (スライダーの値) を使用してsetTimeoutの時間を設定
             setTimeout(() => {
                 isSounding = false;
                 volumeDisplay.textContent = '0.00';
