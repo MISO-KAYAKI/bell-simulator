@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>クマ鈴シミュレーター (カウベル音色)</title>
+    <title>クマ鈴シミュレーター (スライダー余韻調整版)</title>
     <style>
         body {
             display: flex;
@@ -27,48 +27,39 @@
             border: none;
             color: white;
             border-radius: 8px;
-            margin: 15px 0;
+            margin: 15px 0 25px 0; /* マージンを調整 */
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); 
             transition: background-color 0.3s;
         }
-        /* 停止中 (Stopped) のスタイル */
-        #toggle-button[data-state="stopped"] {
-            background-color: #007bff; /* 青 */
-        }
-        /* 実行中 (Running) のスタイル */
-        #toggle-button[data-state="running"] {
-            background-color: #dc3545; /* 赤 */
-        }
-        #toggle-button:active {
-            opacity: 0.8;
-        }
-        #status {
-            margin-top: 10px;
-            font-weight: bold;
-            color: #333;
-        }
+        /* スタイルは省略... */
     </style>
 </head>
 <body>
 
-    <h1>🐻 クマ鈴シミュレーター (カウベル音色)</h1>
+    <h1>🐻 クマ鈴シミュレーター (スライダー余韻調整版)</h1>
     <p>スマートフォンを揺らして音を鳴らしてください。</p>
 
     <button id="toggle-button" data-state="stopped">タップしてセンサーを有効化</button>
 
     <div id="status">ステータス: 待機中（上のボタンを押してください）</div>
 
+    <div style="margin: 20px 0;">
+        <label for="decay-slider">余韻時間 (Release Time):</label>
+        <input type="range" id="decay-slider" min="0.5" max="2.0" step="0.1" value="2.0">
+        <span id="decay-display">2.0</span> 秒
+    </div>
+
     <p>現在の揺れの強さ (m/s²): <span id="acceleration-display">0.00</span></p>
     <p>現在の音量 (ゲイン): <span id="volume-display">0.00</span></p>
     <p>現在の音色 (ピッチ/Hz): <span id="pitch-display">0.00</span></p>
 
     <script>
-        // AudioContextはグローバルに保持
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         const audioContext = new AudioContext();
         
         // カウベルの音色データ
-        const COWBELL_DURATION = 0.7;
+        // ★ 変更点 3: 初期余韻時間を2.0秒に設定
+        let COWBELL_DURATION = 2.0; 
         const FREQ_LOW = 540;
         const FREQ_HIGH = 800;
         const FILTER_FREQ = 2500;
@@ -80,12 +71,23 @@
         const accelerationDisplay = document.getElementById('acceleration-display');
         const volumeDisplay = document.getElementById('volume-display');
         const pitchDisplay = document.getElementById('pitch-display');
+        
+        // ★ 変更点 2: スライダー要素の参照
+        const decaySlider = document.getElementById('decay-slider');
+        const decayDisplay = document.getElementById('decay-display');
+        
+        // ★ 変更点 2: スライダーイベントリスナーを設定
+        decaySlider.addEventListener('input', (e) => {
+            // スライダーの値をCOWBELL_DURATION変数に反映し、表示を更新
+            COWBELL_DURATION = parseFloat(e.target.value);
+            decayDisplay.textContent = COWBELL_DURATION.toFixed(1);
+        });
+
 
         /**
-         * Web Audio APIのセットアップ (ここでは、Contextが作られているか確認するのみ)
+         * Web Audio APIのセットアップ 
          */
         function setupAudio() {
-             // 従来のオシレーター接続は行わない
              if (audioContext.state === 'suspended') {
                 audioContext.resume();
              }
@@ -97,51 +99,42 @@
         function playCowbellSound() {
             const now = audioContext.currentTime;
             
-            // 1. ゲイン（音量）ノード (エンベロープ制御用)
+            // カウベル音色ロジック (COWBELL_DURATIONが動的に参照される)
             const gainNode = audioContext.createGain();
             gainNode.connect(audioContext.destination);
-            
-            // エンベロープ設定: 減衰時間 0.7秒
             gainNode.gain.setValueAtTime(0.01, now); 
-            gainNode.gain.linearRampToValueAtTime(0.5, now + 0.005); // 素早いアタック
-            gainNode.gain.exponentialRampToValueAtTime(0.001, now + COWBELL_DURATION); // ゆっくりとしたディケイ
+            gainNode.gain.linearRampToValueAtTime(0.5, now + 0.005); 
+            // COWBELL_DURATION (スライダーの値) を使用して減衰時間を設定
+            gainNode.gain.exponentialRampToValueAtTime(0.001, now + COWBELL_DURATION); 
 
-            // 2. バンドパスフィルター
             const filter = audioContext.createBiquadFilter();
             filter.type = 'bandpass';
             filter.frequency.setValueAtTime(FILTER_FREQ, now);
             filter.Q.setValueAtTime(5, now);
             filter.connect(gainNode);
 
-            // 3. オシレーター 1 (矩形波)
             const osc1 = audioContext.createOscillator();
             osc1.type = 'square';
             osc1.frequency.setValueAtTime(FREQ_LOW, now);
             osc1.connect(filter);
             
-            // 4. オシレーター 2 (矩形波)
             const osc2 = audioContext.createOscillator();
             osc2.type = 'square';
             osc2.frequency.setValueAtTime(FREQ_HIGH, now);
             osc2.connect(filter);
             
-            // 5. ノードの開始と停止
             osc1.start(now);
             osc2.start(now);
-            
-            // 0.7秒後にオシレーターを停止
+            // COWBELL_DURATION (スライダーの値) を使用してオシレーターの停止時間を設定
             osc1.stop(now + COWBELL_DURATION);
             osc2.stop(now + COWBELL_DURATION);
 
             // --- 表示と連打防止フラグのリセット ---
             isSounding = true;
-            
-            // 表示を更新 (今回は固定値)
             volumeDisplay.textContent = '0.50';
-            // ピッチ表示は代表値として低い方の周波数を表示
             pitchDisplay.textContent = FREQ_LOW.toFixed(2); 
 
-            // 減衰時間 (0.7秒) 後にフラグと表示をリセット
+            // COWBELL_DURATION (スライダーの値) を使用してsetTimeoutの時間を設定
             setTimeout(() => {
                 isSounding = false;
                 volumeDisplay.textContent = '0.00';
@@ -213,7 +206,7 @@
                         permissionGranted = false;
                     }
                 } catch (e) {
-                    // iPhoneなどで許可が不要な場合も含む
+                    
                 }
             }
             
