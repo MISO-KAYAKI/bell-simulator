@@ -27,11 +27,26 @@
             border: none;
             color: white;
             border-radius: 8px;
-            margin: 15px 0 25px 0; /* マージンを調整 */
+            margin: 15px 0 25px 0;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); 
             transition: background-color 0.3s;
         }
-        /* スタイルは省略... */
+        /* 停止中 (Stopped) のスタイル - 色を復活 */
+        #toggle-button[data-state="stopped"] {
+            background-color: #007bff; /* 青 */
+        }
+        /* 実行中 (Running) のスタイル - 色を復活 */
+        #toggle-button[data-state="running"] {
+            background-color: #dc3545; /* 赤 */
+        }
+        #toggle-button:active {
+            opacity: 0.8;
+        }
+        #status {
+            margin-top: 10px;
+            font-weight: bold;
+            color: #333;
+        }
     </style>
 </head>
 <body>
@@ -58,7 +73,6 @@
         const audioContext = new AudioContext();
         
         // カウベルの音色データ
-        // ★ 変更点 3: 初期余韻時間を2.0秒に設定
         let COWBELL_DURATION = 2.0; 
         const FREQ_LOW = 540;
         const FREQ_HIGH = 800;
@@ -72,11 +86,10 @@
         const volumeDisplay = document.getElementById('volume-display');
         const pitchDisplay = document.getElementById('pitch-display');
         
-        // ★ 変更点 2: スライダー要素の参照
         const decaySlider = document.getElementById('decay-slider');
         const decayDisplay = document.getElementById('decay-display');
         
-        // ★ 変更点 2: スライダーイベントリスナーを設定
+        // スライダーイベントリスナーを設定
         decaySlider.addEventListener('input', (e) => {
             // スライダーの値をCOWBELL_DURATION変数に反映し、表示を更新
             COWBELL_DURATION = parseFloat(e.target.value);
